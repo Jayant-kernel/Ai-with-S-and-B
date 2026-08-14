@@ -1,0 +1,59 @@
+import { z } from "zod";
+
+import { SARVAM_TTS_LANGUAGES, SARVAM_VOICES } from "@/lib/sarvam/settings";
+
+const optionalSecret = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  z.string().min(1).optional(),
+);
+
+const envBoolean = (defaultValue: boolean) =>
+  z
+    .enum(["true", "false"])
+    .default(String(defaultValue) as "true" | "false")
+    .transform((value) => value === "true");
+
+export const serverEnvSchema = z.object({
+  OPENAI_API_KEY: optionalSecret,
+  SARVAM_API_KEY: optionalSecret,
+  GEMINI_API_KEY: optionalSecret,
+  CONVERSATION_STATE_SECRET: optionalSecret,
+  VOICE_ENGINE: z.enum(["sarvam_chain", "openai_realtime"]).default("sarvam_chain"),
+  OPENAI_REALTIME_MODEL: z.string().default("gpt-realtime-2.1-mini"),
+  OPENAI_REALTIME_DEV_MODEL: z.string().default("gpt-realtime-2.1"),
+  OPENAI_REALTIME_VOICE: z.string().default("marin"),
+  OPENAI_REASONING_EFFORT: z.enum(["low", "medium", "high"]).default("low"),
+  OPENAI_TURN_DETECTION: z.literal("semantic_vad").default("semantic_vad"),
+  SARVAM_STT_MODEL: z.string().default("saaras:v3"),
+  SARVAM_STT_LANGUAGE: z.string().default("unknown"),
+  SARVAM_CHAT_MODEL: z.string().default("sarvam-105b-conversations"),
+  SARVAM_TTS_MODEL: z.string().default("bulbul:v3"),
+  SARVAM_TTS_LANGUAGE: z.enum(SARVAM_TTS_LANGUAGES).default("hi-IN"),
+  SARVAM_TTS_SPEAKER: z.enum(SARVAM_VOICES).default("ritu"),
+  SARVAM_TTS_PACE: z.coerce.number().min(0.5).max(2).default(0.85),
+  SARVAM_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(120_000).default(45_000),
+  SARVAM_MAX_AUDIO_BYTES: z.coerce.number().int().min(64_000).max(20_000_000).default(8_000_000),
+  SARVAM_HISTORY_MESSAGES: z.coerce.number().int().min(0).max(20).default(16),
+  DATABASE_URL: z.string().default("file:./dev.db"),
+  APP_ORIGIN: z.url().default("http://localhost:3000"),
+  STORE_RAW_TRANSCRIPTS: envBoolean(false),
+  ENABLE_MEMORY: envBoolean(false),
+  ENABLE_SAFETY_MONITOR: envBoolean(false),
+  ENABLE_REMINDERS: envBoolean(false),
+  ENABLE_SARVAM_FALLBACK: envBoolean(false),
+  ENABLE_VOICE_CLONE: z.literal("false").default("false").transform(() => false),
+  LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+});
+
+export type ServerEnv = z.infer<typeof serverEnvSchema>;
+
+export function parseServerEnv(input: Record<string, string | undefined>): ServerEnv {
+  const result = serverEnvSchema.safeParse(input);
+
+  if (!result.success) {
+    const fields = [...new Set(result.error.issues.map((issue) => issue.path.join(".")))];
+    throw new Error(`Invalid server configuration: ${fields.join(", ")}`);
+  }
+
+  return result.data;
+}
