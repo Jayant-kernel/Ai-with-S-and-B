@@ -7,6 +7,7 @@ export type HealthStatus = {
   sarvamConfigured: boolean;
   geminiConfigured: boolean;
   databaseConfigured: boolean;
+  memoryConfigured: boolean;
   liveVoiceAvailable: boolean;
 };
 
@@ -15,6 +16,7 @@ export function buildHealthStatus(env: ServerEnv): HealthStatus {
   const groqConfigured = Boolean(env.GROQ_API_KEY);
   const sarvamConfigured = Boolean(env.SARVAM_API_KEY);
   const geminiConfigured = Boolean(env.GEMINI_API_KEY);
+  const databaseConfigured = Boolean(env.DATABASE_URL);
 
   return {
     status: "ok",
@@ -22,7 +24,11 @@ export function buildHealthStatus(env: ServerEnv): HealthStatus {
     groqConfigured,
     sarvamConfigured,
     geminiConfigured,
-    databaseConfigured: Boolean(env.DATABASE_URL),
+    databaseConfigured,
+    // Distinct from databaseConfigured: memory also needs its own
+    // dedicated encryption key and the feature flag on before the app
+    // will actually read or write anything.
+    memoryConfigured: env.ENABLE_MEMORY && databaseConfigured && Boolean(env.MEMORY_ENCRYPTION_KEY),
     liveVoiceAvailable:
       env.VOICE_ENGINE === "sarvam_chain" ? sarvamConfigured : openaiConfigured,
   };

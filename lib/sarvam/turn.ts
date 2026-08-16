@@ -8,6 +8,7 @@ import { classifySafety } from "@/lib/companion/safety";
 import { observeSafety, type ModelSafetyAssessment } from "@/lib/companion/safety-observer";
 import { shapeSpokenResponse } from "@/lib/companion/spoken-response";
 import type { ServerEnv } from "@/lib/config/env-schema";
+import { selectMemoryContext, type StoredMemory } from "@/lib/memory/context";
 import { redactPii } from "@/lib/privacy/pii";
 import { COMPANION_INSTRUCTIONS } from "@/lib/realtime/settings";
 import { settleWithFallback } from "@/lib/util/settle-with-fallback";
@@ -40,12 +41,28 @@ export function boundedHistory(
     .filter(({ content }) => content.length > 0);
 }
 
+export function memoryContextMessage(storedMemories: StoredMemory[]): ModelMessage | null {
+  const facts = selectMemoryContext({ memories: storedMemories, privateMode: false });
+  if (facts.length === 0) return null;
+  return {
+    role: "system",
+    content: `What you remember about this person from past conversations:\n${
+      facts.map((fact) => `- ${fact.text}`).join("\n")
+    }`,
+  };
+}
+
 export async function runSarvamTurn(input: {
   audio: Blob;
   filename: string;
   context: ConversationContext;
   speaker?: SarvamVoice;
   env: ServerEnv;
+  /** Elder's approved, unexpired memories, already fetched by the caller.
+   *  Defaults to none so this function stays testable without DB access --
+   *  fetching stays at the route/pipeline layer, this is pure orchestration
+   *  over already-resolved inputs. */
+  storedMemories?: StoredMemory[];
 }) {
   const clientOptions = {
     apiKey: input.env.SARVAM_API_KEY!,
@@ -76,8 +93,10 @@ export async function runSarvamTurn(input: {
     safety,
   });
 
+  const memoryMessage = memoryContextMessage(input.storedMemories ?? []);
   const messages: ModelMessage[] = [
     { role: "system", content: COMPANION_INSTRUCTIONS },
+    ...(memoryMessage ? [memoryMessage] : []),
     { role: "system", content: plan.directive },
     ...history,
     { role: "user", content: safeTranscript },

@@ -26,6 +26,7 @@ describe("health status", () => {
       sarvamConfigured: true,
       geminiConfigured: true,
       databaseConfigured: false,
+      memoryConfigured: false,
       liveVoiceAvailable: true,
     });
     expect(serialized).not.toContain(openaiKey);
@@ -44,6 +45,33 @@ describe("health status", () => {
       parseServerEnv({ DATABASE_URL: "postgresql://user:pass@host/db" }),
     );
     expect(configured.databaseConfigured).toBe(true);
+  });
+
+  it("reports memoryConfigured only when the flag, database, and encryption key are all set", () => {
+    const allButFlag = buildHealthStatus(
+      parseServerEnv({
+        DATABASE_URL: "postgresql://user:pass@host/db",
+        MEMORY_ENCRYPTION_KEY: "test-memory-key",
+      }),
+    );
+    expect(allButFlag.memoryConfigured).toBe(false);
+
+    const allButKey = buildHealthStatus(
+      parseServerEnv({
+        DATABASE_URL: "postgresql://user:pass@host/db",
+        ENABLE_MEMORY: "true",
+      }),
+    );
+    expect(allButKey.memoryConfigured).toBe(false);
+
+    const fullyConfigured = buildHealthStatus(
+      parseServerEnv({
+        DATABASE_URL: "postgresql://user:pass@host/db",
+        MEMORY_ENCRYPTION_KEY: "test-memory-key",
+        ENABLE_MEMORY: "true",
+      }),
+    );
+    expect(fullyConfigured.memoryConfigured).toBe(true);
   });
 
   it("reports the selected engine as unavailable when its key is missing", () => {

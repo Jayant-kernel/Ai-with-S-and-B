@@ -82,9 +82,11 @@ function microphoneError(error: unknown) {
 
 export function SarvamCompanion({
   configured,
+  memoryConfigured = false,
   debug = false,
 }: {
   configured: boolean;
+  memoryConfigured?: boolean;
   debug?: boolean;
 }) {
   const [voiceState, setVoiceState] = useState<VoiceState>("ready");
@@ -517,9 +519,16 @@ export function SarvamCompanion({
             Your AI listening companion
           </h1>
         </div>
-        <span className={`rounded-full px-3 py-2 text-sm font-bold ${debug ? "bg-amber-100 text-amber-900" : "bg-teal-50 text-teal-900"}`}>
-          {debug ? "Sarvam debug" : "AI companion"}
-        </span>
+        <div className="flex items-center gap-3">
+          {memoryConfigured && (
+            <a href="/memory" className="rounded-full border border-teal-300 px-3 py-2 text-sm font-bold text-teal-900">
+              What Saathi remembers
+            </a>
+          )}
+          <span className={`rounded-full px-3 py-2 text-sm font-bold ${debug ? "bg-amber-100 text-amber-900" : "bg-teal-50 text-teal-900"}`}>
+            {debug ? "Sarvam debug" : "AI companion"}
+          </span>
+        </div>
       </header>
 
       {debug && (
@@ -657,7 +666,11 @@ export function SarvamCompanion({
       )}
 
       <footer className="mt-6 border-t border-slate-200 pt-5 text-base leading-7 text-slate-600">
-        Saathi is AI, not a doctor, therapist, relative, or emergency service. Voice turns are sent to Sarvam for speech and response processing; Saathi does not save them in a database.
+        Saathi is AI, not a doctor, therapist, relative, or emergency service. Voice turns are sent to
+        Sarvam for speech and response processing.{" "}
+        {memoryConfigured
+          ? "Saathi does not save full conversations, but with memory turned on it may remember a few specific things you talk about -- see “What Saathi remembers” to review or remove them anytime."
+          : "Saathi does not save them in a database."}
       </footer>
     </main>
   );

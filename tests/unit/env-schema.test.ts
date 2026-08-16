@@ -19,6 +19,8 @@ describe("server environment", () => {
     expect(env.CONVERSATION_PROVIDER).toBe("auto");
     expect(env.SAFETY_PROVIDER).toBe("auto");
     expect(env.ENABLE_SAFETY_MONITOR).toBe(true);
+    expect(env.DATABASE_URL).toBeUndefined();
+    expect(env.MEMORY_ENCRYPTION_KEY).toBeUndefined();
   });
 
   it("parses feature flags explicitly", () => {

@@ -1,7 +1,18 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getServerEnv } from "@/lib/config/server-env";
+import { getPool } from "@/lib/db/pool";
+import type { StoredMemory } from "@/lib/memory/context";
+import {
+  createElderToken,
+  ELDER_COOKIE_MAX_AGE_SECONDS,
+  ELDER_COOKIE_NAME,
+  hashElderToken,
+  readElderTokenFromCookieHeader,
+} from "@/lib/memory/elder-session";
+import { loadStoredMemoriesForTurn, runMemoryPipeline } from "@/lib/memory/pipeline";
+import type { QueryFn } from "@/lib/memory/repository";
 import { isSameOrigin, LocalRateLimiter } from "@/lib/realtime/request-policy";
 import { SarvamNoSpeechError, SarvamUpstreamError } from "@/lib/sarvam/client";
 import {
@@ -134,6 +145,41 @@ export async function POST(request: Request) {
     return errorResponse(400, "invalid_speaker", "That voice is not available.");
   }
 
+  // No cookie is read or minted, and no DB call happens, unless memory is
+  // explicitly turned on -- this keeps today's behavior unchanged by
+  // default. When it is on but DATABASE_URL/MEMORY_ENCRYPTION_KEY aren't
+  // both set, the elder still gets a cookie (so it's ready once the rest
+  // is configured) but no memories are fetched or written.
+  let elderToken: string | null = null;
+  let mintedElderToken = false;
+  let storedMemories: StoredMemory[] = [];
+  if (env.ENABLE_MEMORY) {
+    elderToken = readElderTokenFromCookieHeader(request.headers.get("cookie"));
+    if (!elderToken) {
+      elderToken = createElderToken();
+      mintedElderToken = true;
+    }
+    const pool = getPool(env);
+    const key = env.MEMORY_ENCRYPTION_KEY;
+    if (pool && key) {
+      try {
+        const query: QueryFn = (text, params) => pool.query(text, params);
+        // Read-only: this turn hasn't happened yet and might still fail, so
+        // nothing here may create an elder row (see loadStoredMemoriesForTurn's
+        // doc comment). The row itself is only ever created after success,
+        // inside runMemoryPipeline's after() callback below.
+        storedMemories = await loadStoredMemoriesForTurn({
+          query,
+          key,
+          elderHash: hashElderToken(elderToken),
+        });
+      } catch {
+        // Best-effort: a memory read failure must never block the turn.
+        storedMemories = [];
+      }
+    }
+  }
+
   try {
     const result = await runSarvamTurn({
       audio,
@@ -141,6 +187,7 @@ export async function POST(request: Request) {
       context,
       speaker: parsedSpeaker.data,
       env,
+      storedMemories,
     });
     const { nextContext, ...response } = result;
     let nextState;
@@ -149,12 +196,36 @@ export async function POST(request: Request) {
     } catch {
       nextState = createConversationState(emptyConversationContext(), stateSecret);
     }
-    return NextResponse.json({
+    const nextResponse = NextResponse.json({
       ...response,
       conversationState: nextState,
     }, {
       headers: { "Cache-Control": "no-store" },
     });
+
+    if (elderToken) {
+      if (mintedElderToken) {
+        nextResponse.cookies.set(ELDER_COOKIE_NAME, elderToken, {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: process.env.NODE_ENV === "production",
+          maxAge: ELDER_COOKIE_MAX_AGE_SECONDS,
+          path: "/",
+        });
+      }
+      const elderHash = hashElderToken(elderToken);
+      after(() =>
+        runMemoryPipeline({
+          elderHash,
+          transcript: result.transcript,
+          reply: result.reply,
+          preferredLanguage: result.languageCode,
+          env,
+        }).catch(() => {}),
+      );
+    }
+
+    return nextResponse;
   } catch (error) {
     if (error instanceof SarvamNoSpeechError) {
       return errorResponse(
