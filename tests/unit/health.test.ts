@@ -8,9 +8,11 @@ describe("health status", () => {
     const openaiKey = "openai-private-test-value";
     const sarvamKey = "sarvam-private";
     const geminiKey = "gemini-private";
+    const groqKey = "groq-private";
     const status = buildHealthStatus(
       parseServerEnv({
         OPENAI_API_KEY: openaiKey,
+        GROQ_API_KEY: groqKey,
         SARVAM_API_KEY: sarvamKey,
         GEMINI_API_KEY: geminiKey,
       }),
@@ -20,12 +22,14 @@ describe("health status", () => {
     expect(status).toEqual({
       status: "ok",
       openaiConfigured: true,
+      groqConfigured: true,
       sarvamConfigured: true,
       geminiConfigured: true,
       databaseConfigured: true,
       liveVoiceAvailable: true,
     });
     expect(serialized).not.toContain(openaiKey);
+    expect(serialized).not.toContain(groqKey);
     expect(serialized).not.toContain(sarvamKey);
     expect(serialized).not.toContain(geminiKey);
   });

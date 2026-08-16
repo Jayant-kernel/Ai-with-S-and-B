@@ -1,40 +1,78 @@
 # Architecture
 
-## Primary Sarvam implementation
+Saathi uses a cascaded speech pipeline because it gives us a text checkpoint
+before any reply is spoken. That checkpoint is where privacy redaction, safety,
+memory policy, and reminder validation can be enforced.
 
-Saathi is one full-stack Next.js TypeScript application. Server configuration is parsed through a typed Zod schema. The health route publishes only boolean readiness information.
-
-The primary path is:
-
-```text
-Browser MediaRecorder -> /api/sarvam/turn -> Saaras v3
-  -> sarvam-105b-conversations -> Bulbul v3 -> browser speaker
-```
-
-The permanent Sarvam key remains on the server. The same-origin, POST-only, locally rate-limited route accepts a completed audio turn, validates its type and size, and calls all three Sarvam services server-side. The browser receives transcript, reply, WAV audio, timings, and an encrypted authenticated conversation-state token. No audio or transcript is stored in a server database.
-
-Conversation state is limited to recent exact messages and policy counters, expires after 30 minutes, and is encrypted so the browser cannot read or fabricate its contents. The encrypted token is held in browser session storage so a refresh does not erase the current call; ending the conversation clears it. Expired legacy state degrades to a fresh conversation instead of killing the voice turn.
-
-After STT, the route uses explicit orchestration layers before calling the conversational model:
+## Runtime flow
 
 ```text
-Transcript
-  -> deterministic safety classification
-  -> per-turn dialogue policy and response objective
-  -> bounded exact session context
-  -> Sarvam conversation model
-  -> speech-first response shaping (short output, at most one question)
-  -> Bulbul TTS
+Elder's microphone or phone
+  -> WebRTC / Exotel transport
+  -> Pipecat orchestration
+  -> Silero voice activity detection
+  -> Smart Turn v3 endpoint decision
+  -> Sarvam Saaras v3 speech-to-text
+  -> PII redaction
+  -> [conversation brain || input safety brain]
+  -> output safety brain
+  -> deterministic policy decision
+  -> Sarvam Bulbul v3 text-to-speech
+  -> elder hears the approved reply
 ```
 
-The policy distinguishes emotional exploration, quiet companionship, repair, medication uncertainty, and urgent safety checking. It also supplies India-local time context, suppresses repeated suggestions, and limits consecutive question turns. Model-generated summaries are not stored as facts, which prevents an invented inference from becoming memory.
+Silero answers "is there speech right now?" Smart Turn answers "has the person
+finished the thought?" Keeping those as separate decisions is especially useful
+for older speakers who pause mid-sentence.
 
-Ending the conversation aborts active network work, stops microphone tracks and playback, revokes object URLs, and clears browser-held context.
+## Why two brains
 
-## OpenAI comparison
+The conversation brain is optimized for warmth, continuity, language matching,
+and natural short replies. The safety brain has one narrow job: classify risk.
+It does not converse or provide advice.
 
-The earlier browser WebRTC path remains isolated at `/debug/openai`. Its permanent OpenAI key stays server-side, while `/api/realtime/session` mints a temporary client credential. It uses `gpt-realtime-2.1-mini` by default, with the quality model and `marin`/`cedar` available for comparison when OpenAI API credits exist.
+Using one model for both jobs creates a conflict. A companion may be strongly
+prompted to stay agreeable, while a safety system sometimes needs to stop,
+clarify, or escalate. Independent calls also let the input safety check run in
+parallel, so most of its latency is hidden behind reply generation.
 
-## Deliberately deferred
+Neither model gets final authority. A deterministic policy engine receives the
+classifications and either releases the draft or substitutes fixed safe speech.
+If the safety service times out, returns invalid JSON, or fails, the draft is
+not spoken.
 
-Cross-call personal memory requires identity, consent, correction/deletion controls, provenance, and encrypted persistent storage. It is not approximated with unverified model-generated facts. Full spoken barge-in, streaming STT/LLM/TTS, and semantic interruption detection require a persistent duplex transport such as WebRTC and are not claimed by the current REST implementation.
+## Memory path
+
+```text
+Completed turn
+  -> redact direct identifiers
+  -> post-turn memory gate
+  -> discard private/high-risk content
+  -> quarantine uncertain content
+  -> store approved low-risk facts as encrypted records
+```
+
+At the next conversation, only confirmed, approved, unexpired facts can be
+loaded, and only within a fixed read budget. Private mode loads no durable
+memory and permits no writes. Raw audio is not a memory record.
+
+The policy modules and encrypted PostgreSQL schema are implemented. Persistent
+memory is disabled until an elder identity, consent state, encryption key, and
+database connection are configured.
+
+## Reminder path
+
+A reminder is structured data, not free-form model text. The model may propose
+a reminder, but code parses its time and message, reads it back, and stores it
+only after explicit confirmation. Editing creates a new draft that must be read
+back again.
+
+## Current transports
+
+The Next.js REST route is the stable browser test path. The Python Pipecat
+service is the streaming target and already supports local WebRTC. Exotel
+transport code is included but remains disabled until its WSS endpoint and
+account flow are configured.
+
+The older OpenAI Realtime comparison remains isolated at `/debug/openai` and is
+optional. It is not part of the current Groq + Sarvam build.

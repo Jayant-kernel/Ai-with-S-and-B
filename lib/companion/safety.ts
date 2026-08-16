@@ -7,6 +7,8 @@ export type SafetyConcern =
   | "confusion"
   | "self_harm"
   | "abuse"
+  | "credential_request"
+  | "scam"
   | "stranded";
 
 export type SafetyAssessment = {
@@ -20,6 +22,22 @@ const rules: Array<{
   level: SafetyAssessment["level"];
   patterns: RegExp[];
 }> = [
+  {
+    concern: "credential_request",
+    level: "urgent",
+    patterns: [
+      /\b(?:otp|pin|password|cvv|one[ -]?time password)\b/i,
+      /\b(?:share|tell|send|give)\b.{0,30}\b(?:bank detail|card number|upi pin)\b/i,
+    ],
+  },
+  {
+    concern: "scam",
+    level: "urgent",
+    patterns: [
+      /\b(?:send|transfer|pay)\b.{0,30}\b(?:money|rupees|upi|bank)\b/i,
+      /\b(?:gift card|remote access|screen share)\b.{0,30}\b(?:pay|bank|account)\b/i,
+    ],
+  },
   {
     concern: "self_harm",
     level: "urgent",

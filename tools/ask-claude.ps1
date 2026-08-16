@@ -6,8 +6,14 @@ param(
   [Parameter(Mandatory = $true)]
   [string[]]$Files,
 
+  [ValidateSet("mechanical", "general", "security", "architecture")]
+  [string]$TaskType = "general",
+
+  [ValidateSet("auto", "haiku", "sonnet", "opus")]
+  [string]$Model = "auto",
+
   [ValidateSet("low", "medium", "high", "xhigh", "max")]
-  [string]$Effort = "low",
+  [string]$Effort,
 
   [ValidateRange(15, 600)]
   [int]$TimeoutSeconds = 120
@@ -16,6 +22,15 @@ param(
 $ErrorActionPreference = "Stop"
 
 function Find-ClaudeExecutable {
+  $windowsCommand = Get-Command claude.cmd -ErrorAction SilentlyContinue
+  if ($windowsCommand -and $windowsCommand.Source) {
+    $npmBinary = Join-Path (Split-Path $windowsCommand.Source -Parent) `
+      "node_modules\@anthropic-ai\claude-code\bin\claude.exe"
+    if (Test-Path -LiteralPath $npmBinary) {
+      return $npmBinary
+    }
+  }
+
   $command = Get-Command claude -ErrorAction SilentlyContinue
   if ($command -and $command.Source) {
     return $command.Source
@@ -120,42 +135,66 @@ Rules:
 $($sourceSections -join "`n`n")
 "@
 
-$claudeExecutable = Find-ClaudeExecutable
-$startInfo = New-Object System.Diagnostics.ProcessStartInfo
-$startInfo.FileName = $claudeExecutable
-$startInfo.Arguments = "-p --model opus --effort $Effort --max-turns 1 --tools `"`" --output-format text --no-session-persistence --no-chrome"
-$startInfo.WorkingDirectory = $repositoryRoot
-$startInfo.UseShellExecute = $false
-$startInfo.RedirectStandardInput = $true
-$startInfo.RedirectStandardOutput = $true
-$startInfo.RedirectStandardError = $true
-$startInfo.CreateNoWindow = $true
-
-$process = New-Object System.Diagnostics.Process
-$process.StartInfo = $startInfo
-if (-not $process.Start()) {
-  throw "Claude Code could not be started."
+$routing = switch ($TaskType) {
+  "mechanical" { @{ Model = "haiku"; Effort = "low" } }
+  "security" { @{ Model = "opus"; Effort = "high" } }
+  "architecture" { @{ Model = "opus"; Effort = "high" } }
+  default { @{ Model = "sonnet"; Effort = "medium" } }
+}
+$selectedModel = if ($Model -eq "auto") { $routing.Model } else { $Model }
+$selectedEffort = if ($PSBoundParameters.ContainsKey("Effort")) {
+  $Effort
+} else {
+  $routing.Effort
 }
 
-$stdoutTask = $process.StandardOutput.ReadToEndAsync()
-$stderrTask = $process.StandardError.ReadToEndAsync()
-$process.StandardInput.Write($prompt)
-$process.StandardInput.Close()
+function Invoke-ClaudeReview([string]$ClaudeModel, [string]$ClaudeEffort) {
+  $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+  $startInfo.FileName = $claudeExecutable
+  $startInfo.Arguments = "-p --model $ClaudeModel --effort $ClaudeEffort --max-turns 1 --tools `"`" --output-format text --no-session-persistence --no-chrome"
+  $startInfo.WorkingDirectory = $repositoryRoot
+  $startInfo.UseShellExecute = $false
+  $startInfo.RedirectStandardInput = $true
+  $startInfo.RedirectStandardOutput = $true
+  $startInfo.RedirectStandardError = $true
+  $startInfo.CreateNoWindow = $true
 
-if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-  $process.Kill()
+  $process = New-Object System.Diagnostics.Process
+  $process.StartInfo = $startInfo
+  if (-not $process.Start()) {
+    throw "Claude Code could not be started."
+  }
+
+  $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+  $stderrTask = $process.StandardError.ReadToEndAsync()
+  $process.StandardInput.Write($prompt)
+  $process.StandardInput.Close()
+
+  if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+    $process.Kill()
+    $process.WaitForExit()
+    throw "Claude Code exceeded the $TimeoutSeconds-second review limit. Narrow the task or pass a larger timeout."
+  }
   $process.WaitForExit()
-  throw "Claude Code exceeded the $TimeoutSeconds-second review limit. Narrow the task or pass a larger timeout."
-}
-$process.WaitForExit()
 
-$stdout = $stdoutTask.GetAwaiter().GetResult().Trim()
-$stderr = $stderrTask.GetAwaiter().GetResult().Trim()
-if ($process.ExitCode -ne 0) {
-  throw "Claude Code failed with exit code $($process.ExitCode): $stderr"
+  @{
+    ExitCode = $process.ExitCode
+    Output = $stdoutTask.GetAwaiter().GetResult().Trim()
+    Error = $stderrTask.GetAwaiter().GetResult().Trim()
+  }
 }
-if (-not $stdout) {
+
+$claudeExecutable = Find-ClaudeExecutable
+$result = Invoke-ClaudeReview $selectedModel $selectedEffort
+if ($result.ExitCode -ne 0 -and $selectedModel -eq "opus" -and $Model -eq "auto") {
+  Write-Warning "Opus is unavailable for this account or quota; retrying with Sonnet high effort."
+  $result = Invoke-ClaudeReview "sonnet" "high"
+}
+if ($result.ExitCode -ne 0) {
+  throw "Claude Code failed with exit code $($result.ExitCode): $($result.Error)"
+}
+if (-not $result.Output) {
   throw "Claude Code returned an empty review."
 }
 
-$stdout
+$result.Output

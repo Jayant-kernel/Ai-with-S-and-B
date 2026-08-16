@@ -1,13 +1,17 @@
 import "server-only";
 
+import { generateConversationReply } from "@/lib/ai/conversation";
+import type { ModelMessage } from "@/lib/ai/openai-compatible";
 import { planDialogue, updateDialogueMeta } from "@/lib/companion/dialogue-policy";
+import { decideResponsePolicy } from "@/lib/companion/policy-engine";
 import { classifySafety } from "@/lib/companion/safety";
+import { observeSafety, type ModelSafetyAssessment } from "@/lib/companion/safety-observer";
 import { shapeSpokenResponse } from "@/lib/companion/spoken-response";
 import type { ServerEnv } from "@/lib/config/env-schema";
+import { redactPii } from "@/lib/privacy/pii";
 import { COMPANION_INSTRUCTIONS } from "@/lib/realtime/settings";
+import { settleWithFallback } from "@/lib/util/settle-with-fallback";
 import {
-  chatWithSarvam,
-  type SarvamMessage,
   synthesizeWithSarvam,
   transcribeWithSarvam,
 } from "@/lib/sarvam/client";
@@ -61,38 +65,67 @@ export async function runSarvamTurn(input: {
   );
   const sttMs = Math.round(performance.now() - sttStartedAt);
 
-  const history = boundedHistory(input.context.messages, input.env.SARVAM_HISTORY_MESSAGES);
+  const history = boundedHistory(input.context.messages, input.env.SARVAM_HISTORY_MESSAGES)
+    .map((message) => ({ ...message, content: redactPii(message.content).redacted }));
   const safety = classifySafety(transcription.transcript);
+  const safeTranscript = redactPii(transcription.transcript).redacted;
   const plan = planDialogue({
-    transcript: transcription.transcript,
+    transcript: safeTranscript,
     history,
     meta: input.context.meta,
     safety,
   });
 
-  const messages: SarvamMessage[] = [
+  const messages: ModelMessage[] = [
     { role: "system", content: COMPANION_INSTRUCTIONS },
     { role: "system", content: plan.directive },
     ...history,
-    { role: "user", content: transcription.transcript },
+    { role: "user", content: safeTranscript },
   ];
   const chatStartedAt = performance.now();
-  const chat = await chatWithSarvam(
-    { model: input.env.SARVAM_CHAT_MODEL, messages },
-    clientOptions,
+  // Wrapped in settleWithFallback so this can never become an unhandled
+  // rejection if generateConversationReply throws below before this promise
+  // is awaited. observeSafety is contracted to never reject on its own, but
+  // that contract living only in its implementation is exactly the kind of
+  // thing a future edit can quietly break.
+  const inputSafetyPromise = settleWithFallback(
+    observeSafety({ phase: "input", text: safeTranscript, env: input.env }),
+    {
+      category: "none",
+      severity: "concern",
+      action: "clarify",
+      confidence: 0,
+      source: "model_error",
+    } satisfies ModelSafetyAssessment,
   );
+  const chat = await generateConversationReply({ messages, env: input.env });
+  const inputSafety = await inputSafetyPromise;
   const chatMs = Math.round(performance.now() - chatStartedAt);
 
   const shaped = shapeSpokenResponse(chat.content, {
     maxSentences: plan.objective === "SAFETY_CHECK" ? 3 : 2,
     maxQuestions: plan.mayAskQuestion ? 1 : 0,
   });
-  const reply = shaped.spoken;
-
+  const safetyStartedAt = performance.now();
+  const outputSafety = await observeSafety({
+    phase: "output",
+    text: shaped.spoken,
+    env: input.env,
+  });
   const outputLanguageCode = ttsLanguage(
     transcription.languageCode,
     input.context.meta.preferredLanguage || input.env.SARVAM_TTS_LANGUAGE,
   );
+  const decision = decideResponsePolicy({
+    deterministic: safety,
+    inputSafety,
+    outputSafety,
+    candidateReply: shaped.spoken,
+    languageCode: outputLanguageCode,
+  });
+  const reply = decision.reply;
+  const safetyMs = Math.round(performance.now() - safetyStartedAt);
+
   const ttsStartedAt = performance.now();
   const audioBase64 = await synthesizeWithSarvam(
     {
@@ -108,8 +141,8 @@ export async function runSarvamTurn(input: {
 
   const nextMessages = [
     ...history,
-    { role: "user" as const, content: transcription.transcript.slice(0, 1_500) },
-    { role: "assistant" as const, content: reply.slice(0, 1_500) },
+    { role: "user" as const, content: safeTranscript.slice(0, 1_500) },
+    { role: "assistant" as const, content: redactPii(reply).redacted.slice(0, 1_500) },
   ].slice(-input.env.SARVAM_HISTORY_MESSAGES);
   const nextMeta = updateDialogueMeta({
     previous: input.context.meta,
@@ -129,12 +162,15 @@ export async function runSarvamTurn(input: {
       objective: plan.objective,
       safetyLevel: safety.level,
       safetyConcern: safety.concern,
+      safetyAction: decision.reason,
+      modelSafetyCategory: inputSafety.category,
       replyTrimmed: shaped.trimmed || chat.finishReason === "length",
     },
     nextContext: { messages: nextMessages, meta: nextMeta },
     timings: {
       sttMs,
       chatMs,
+      safetyMs,
       ttsMs,
       totalMs: Math.round(performance.now() - startedAt),
     },
