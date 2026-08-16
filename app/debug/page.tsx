@@ -8,5 +8,11 @@ export default async function DebugPage() {
   await connection();
   const health = buildHealthStatus(getServerEnv());
 
-  return <SarvamCompanion configured={health.sarvamConfigured} debug />;
+  return (
+    <SarvamCompanion
+      configured={health.sarvamConfigured}
+      memoryConfigured={health.memoryConfigured}
+      debug
+    />
+  );
 }

@@ -55,21 +55,48 @@ def redact_pii(text: str) -> tuple[str, tuple[str, ...]]:
 # sentence, which is how these loanwords are actually spoken in India), and
 # lib/companion/safety.ts does not have Hindi-script credential/scam patterns
 # either, so this stays at parity with the TypeScript source of truth.
-_CREDENTIAL_PATTERN = re.compile(r"\b(?:otp|pin|password|cvv|one[ -]?time password)\b")
-_SCAM_PATTERN = re.compile(r"\b(?:send|transfer|pay)\b.{0,30}\b(?:money|rupees|upi|bank)\b")
-
-# Devanagari variants below are ported from the `rules` table in
-# lib/companion/safety.ts (self_harm, breathing, chest_pain -> medical here
-# since this module's category set has no separate breathing/chest_pain, and
-# abuse) so a Hindi-speaking elder gets the same deterministic coverage on
-# both the browser and Pipecat paths.
-_SELF_HARM_PATTERN = re.compile(
-    r"\b(?:kill myself|suicide|want to die|marna chahta|marna chahti)\b"
-    r"|खुदकुशी|आत्महत्या|मरना चाहता|मरना चाहती"
+_CREDENTIAL_PATTERNS = (
+    re.compile(r"\b(?:otp|pin|password|cvv|one[ -]?time password)\b"),
+    re.compile(r"\b(?:share|tell|send|give)\b.{0,30}\b(?:bank detail|card number|upi pin)\b"),
 )
-_MEDICAL_PATTERN = re.compile(
-    r"\b(?:can'?t breathe|cannot breathe|severe chest pain)\b"
-    r"|सांस नहीं|साँस नहीं|सांस लेने में बहुत|सीने में तेज दर्द|छाती में तेज दर्द"
+_SCAM_PATTERNS = (
+    re.compile(r"\b(?:send|transfer|pay)\b.{0,30}\b(?:money|rupees|upi|bank)\b"),
+    re.compile(r"\b(?:gift card|remote access|screen share)\b.{0,30}\b(?:pay|bank|account)\b"),
+)
+
+# Each tuple below is ported pattern-for-pattern from the `rules` table in
+# lib/companion/safety.ts -- that file is the source of truth for this
+# deterministic layer. lib/companion/safety.ts's `SafetyConcern` type has
+# separate fall/confusion/breathing/chest_pain values; this module's
+# RiskCategory only has the coarser "medical" (matching the *model-based*
+# safety schema in both languages, which also has no finer categories), so
+# all of those fold into _MEDICAL_PATTERNS here. Devanagari variants are
+# ported the same way, for self_harm/medical/abuse (credential/scam stay
+# Latin-script-only in both languages -- see the comment above).
+_SELF_HARM_PATTERNS = (
+    re.compile(r"\b(?:kill|hurt) myself\b"),
+    re.compile(r"\bsuicid(?:e|al)\b"),
+    re.compile(r"\b(?:want|going) to die\b"),
+    re.compile(r"\bmarna chaht[ai]\b"),
+    re.compile(r"खुदकुशी|आत्महत्या|मरना चाहता|मरना चाहती"),
+)
+_MEDICAL_PATTERNS = (
+    # breathing
+    re.compile(r"\b(?:cannot|can'?t|unable to) breathe\b"),
+    re.compile(r"\bsevere (?:shortness of breath|breathing difficulty)\b"),
+    re.compile(r"सांस नहीं|साँस नहीं|सांस लेने में बहुत"),
+    # chest pain
+    re.compile(r"\bsevere chest pain\b"),
+    re.compile(r"\bchest pain\b.*\b(?:sweat|dizzy|breath|crush)"),
+    re.compile(r"सीने में तेज दर्द|छाती में तेज दर्द"),
+    # fall (urgent tier only -- TS's separate concern-tier fall/chest-pain/
+    # stranded rules are out of scope here, see docs/implementation-roadmap.md)
+    re.compile(r"\b(?:fell|fallen|had a fall)\b.*\b(?:can'?t|cannot|unable|bleeding|head|injur)"),
+    re.compile(r"\bcan'?t (?:stand up|get up)\b"),
+    re.compile(r"गिर[^।.!?]{0,60}(?:उठ नहीं|चोट)"),
+    # confusion
+    re.compile(r"\b(?:suddenly confused|don'?t know where i am|cannot remember where i am)\b"),
+    re.compile(r"पता नहीं मैं कहाँ|अचानक उलझन"),
 )
 _ABUSE_PATTERN = re.compile(
     r"\b(?:he|she|they|someone|caregiver|son|daughter)\s+(?:hit|hurt|threaten(?:ed|s)?) me\b"
@@ -80,13 +107,13 @@ _ABUSE_PATTERN = re.compile(
 
 def deterministic_assessment(text: str) -> SafetyAssessment:
     lowered = text.lower()
-    if _CREDENTIAL_PATTERN.search(lowered):
+    if any(pattern.search(lowered) for pattern in _CREDENTIAL_PATTERNS):
         return SafetyAssessment("credential_request", "urgent", "block", 0.99, "deterministic")
-    if _SCAM_PATTERN.search(lowered):
+    if any(pattern.search(lowered) for pattern in _SCAM_PATTERNS):
         return SafetyAssessment("scam", "urgent", "block", 0.9, "deterministic")
-    if _SELF_HARM_PATTERN.search(lowered):
+    if any(pattern.search(lowered) for pattern in _SELF_HARM_PATTERNS):
         return SafetyAssessment("self_harm", "urgent", "escalate", 0.98, "deterministic")
-    if _MEDICAL_PATTERN.search(lowered):
+    if any(pattern.search(lowered) for pattern in _MEDICAL_PATTERNS):
         return SafetyAssessment("medical", "urgent", "escalate", 0.95, "deterministic")
     if _ABUSE_PATTERN.search(lowered):
         return SafetyAssessment("abuse", "urgent", "escalate", 0.9, "deterministic")

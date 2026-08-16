@@ -48,7 +48,11 @@ details, rate limits, and a human-tested operating procedure.
 - Input safety runs in parallel; output safety runs before TTS.
 - Both TypeScript and Pipecat paths redact common Indian PII.
 - The Pipecat WebRTC runner starts locally.
-- Memory gates, read budgets, reminder state logic, and database schema exist.
+- Memory gates, read budgets, reminder state logic, and database schema exist,
+  and memory is now wired end to end: extraction, the gate, encrypted
+  Postgres/Supabase persistence, reading approved memories back into the next
+  turn's context, and a `/memory` review screen (behind `ENABLE_MEMORY`,
+  `DATABASE_URL`, and `MEMORY_ENCRYPTION_KEY`).
 
 ## What needs external details later
 

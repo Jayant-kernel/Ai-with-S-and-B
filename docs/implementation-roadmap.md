@@ -54,9 +54,20 @@ flow, public WSS deployment URL, outbound consent, and applicable DLT setup.
 
 ### Durable cross-call memory
 
-Required before activation: PostgreSQL/Supabase credentials, a dedicated
-encryption key, stable elder identity, consent state, correction/deletion UI,
-and retention policy. Until then, `ENABLE_MEMORY` remains false.
+The code path exists now: `lib/db/pool.ts` (`pg` against `DATABASE_URL`),
+`lib/memory/{crypto,elder-session,repository,extractor,pipeline}.ts`, wired
+into `app/api/sarvam/turn/route.ts` and read back into the conversation by
+`lib/sarvam/turn.ts`. A `/memory` review screen shows what was remembered,
+what's waiting for confirmation, and what was noticed and discarded as
+sensitive (content for discarded items is never stored -- only a category).
+To activate: run `database/001_saathi_memory.sql` against a
+PostgreSQL/Supabase database, set `DATABASE_URL` and a dedicated
+`MEMORY_ENCRYPTION_KEY`, then set `ENABLE_MEMORY=true`. Elder identity is
+currently a minimal httpOnly browser cookie (one browser = one elder
+profile), not real auth -- still needed before this goes further: consent
+wording, a correction/deletion flow beyond the review screen's approve/
+discard, and a retention policy (`memory_items.expires_at` exists in the
+schema but nothing sets it yet).
 
 ### Reminders and escalation
 

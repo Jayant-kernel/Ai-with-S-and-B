@@ -8,5 +8,10 @@ export default async function Home() {
   await connection();
   const health = buildHealthStatus(getServerEnv());
 
-  return <SarvamCompanion configured={health.sarvamConfigured} />;
+  return (
+    <SarvamCompanion
+      configured={health.sarvamConfigured}
+      memoryConfigured={health.memoryConfigured}
+    />
+  );
 }

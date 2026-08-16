@@ -19,6 +19,10 @@ export const serverEnvSchema = z.object({
   SARVAM_API_KEY: optionalSecret,
   GEMINI_API_KEY: optionalSecret,
   CONVERSATION_STATE_SECRET: optionalSecret,
+  // No fallback derivation, unlike CONVERSATION_STATE_SECRET: memory needs
+  // a dedicated encryption key so rotating an unrelated secret can never
+  // silently reveal or invalidate stored memory content.
+  MEMORY_ENCRYPTION_KEY: optionalSecret,
   VOICE_ENGINE: z.enum(["sarvam_chain", "openai_realtime"]).default("sarvam_chain"),
   OPENAI_REALTIME_MODEL: z.string().default("gpt-realtime-2.1-mini"),
   OPENAI_REALTIME_DEV_MODEL: z.string().default("gpt-realtime-2.1"),

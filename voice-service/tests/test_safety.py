@@ -127,6 +127,79 @@ def test_deterministic_policy_detects_hindi_abuse():
     assert assessment.action == "escalate"
 
 
+def test_deterministic_policy_detects_previously_missed_self_harm_phrasings():
+    # Regression: safety.py's self-harm pattern used to be a truncated port
+    # of safety.ts's, missing "hurt myself", "suicidal", and "going to die".
+    for text in (
+        "I want to hurt myself tonight",
+        "I have been feeling suicidal lately",
+        "I am going to die, I cannot take this anymore",
+    ):
+        assessment = deterministic_assessment(text)
+        assert assessment.category == "self_harm", text
+        assert assessment.action == "escalate", text
+
+
+def test_deterministic_policy_detects_previously_missed_medical_phrasings():
+    # Regression: safety.py's medical pattern used to miss "unable to
+    # breathe", "severe shortness of breath", and chest pain co-occurring
+    # with sweating/dizziness (a classic cardiac-emergency combination).
+    for text in (
+        "I am unable to breathe properly right now",
+        "I have severe shortness of breath",
+        "I have chest pain and I am sweating a lot",
+        "chest pain and feeling dizzy",
+    ):
+        assessment = deterministic_assessment(text)
+        assert assessment.category == "medical", text
+        assert assessment.action == "escalate", text
+
+
+def test_deterministic_policy_detects_fall_and_confusion():
+    # Regression: safety.py had no fall/confusion coverage at all -- TS
+    # treats these as separate urgent SafetyConcern values; here they fold
+    # into the coarser "medical" category (see the comment above
+    # _MEDICAL_PATTERNS).
+    for text in (
+        "I fell and I can't get up, I think I'm bleeding",
+        "I can't get up",
+        "I am suddenly confused and don't know where I am",
+    ):
+        assessment = deterministic_assessment(text)
+        assert assessment.category == "medical", text
+        assert assessment.action == "escalate", text
+
+    for text in ("गिर गया और उठ नहीं पा रहा", "अचानक उलझन में हूँ"):
+        assessment = deterministic_assessment(text)
+        assert assessment.category == "medical", text
+        assert assessment.action == "escalate", text
+
+
+def test_deterministic_policy_detects_previously_missed_scam_phrasings():
+    # Regression: the gift-card/remote-access/screen-share scam pattern
+    # (the classic tech-support scam vector targeting elders) was missing.
+    for text in (
+        "he told me to buy a gift card to pay the fine",
+        "the caller wants remote access to my account",
+        "they asked for screen share to check my bank account",
+    ):
+        assessment = deterministic_assessment(text)
+        assert assessment.category == "scam", text
+        assert assessment.action == "block", text
+
+
+def test_deterministic_policy_detects_previously_missed_credential_phrasings():
+    # Regression: phrasing that avoids the literal words otp/pin/password
+    # but still solicits bank/card details was missing.
+    for text in (
+        "please give me your bank detail so I can help",
+        "tell me your card number now",
+    ):
+        assessment = deterministic_assessment(text)
+        assert assessment.category == "credential_request", text
+        assert assessment.action == "block", text
+
+
 def test_deterministic_assessment_is_unaffected_by_prior_redaction():
     # Regression for the bug where _safe_reply ran deterministic_assessment
     # on already-redacted text: "OTP is 123456" -> "[OTP_REDACTED]" no
