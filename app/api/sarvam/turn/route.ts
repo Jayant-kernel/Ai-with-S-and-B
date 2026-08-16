@@ -173,8 +173,10 @@ export async function POST(request: Request) {
           key,
           elderHash: hashElderToken(elderToken),
         });
-      } catch {
-        // Best-effort: a memory read failure must never block the turn.
+      } catch (error) {
+        // Best-effort: a memory read failure must never block the turn --
+        // but stays visible in logs rather than silently vanishing.
+        console.warn("[memory] pre-turn memory read failed:", error);
         storedMemories = [];
       }
     }

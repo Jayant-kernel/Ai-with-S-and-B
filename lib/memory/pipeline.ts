@@ -149,7 +149,14 @@ export async function runMemoryPipeline(input: {
         userConfirmed: status === "approved",
       });
     }
-  } catch {
-    // Best-effort: never let a DB/model failure surface out of after().
+  } catch (error) {
+    // Best-effort: never let a DB/model failure surface out of after() --
+    // but it must not be invisible either. Without this, a real bug here
+    // (bad schema, expired credential, provider outage) looks identical to
+    // "the extractor legitimately found nothing," and it silently never
+    // gets fixed. This is a warning, not the DISABLED/allow-then-log
+    // pattern the safety observers use, because memory has no equivalent
+    // safety consequence to weigh -- it's purely diagnostic here.
+    console.warn("[memory] runMemoryPipeline failed:", error);
   }
 }

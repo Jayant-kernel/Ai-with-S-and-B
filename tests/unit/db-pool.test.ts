@@ -1,3 +1,5 @@
+import { rootCertificates } from "node:tls";
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Regression: lib/db/pool.ts used to set `rejectUnauthorized: false` for
@@ -40,9 +42,17 @@ describe("getPool", () => {
       DATABASE_URL: "postgresql://user:pass@db.example.supabase.co:5432/postgres",
     }));
 
-    expect(poolConstructorSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ ssl: { rejectUnauthorized: true } }),
-    );
+    const [config] = poolConstructorSpy.mock.calls[0]!;
+    expect(config.ssl.rejectUnauthorized).toBe(true);
+    // Regression: connecting to a real Supabase pooler with only Node's
+    // default trust store fails with SELF_SIGNED_CERT_IN_CHAIN -- Supabase
+    // roots its chain at its own private CA (confirmed live). `ca` must be
+    // Node's default roots *plus* Supabase's bundled root, not either alone
+    // -- otherwise either Supabase or a public-CA host would fail to verify.
+    expect(config.ssl.ca).toHaveLength(rootCertificates.length + 1);
+    for (const cert of rootCertificates) expect(config.ssl.ca).toContain(cert);
+    // The one extra entry is Supabase's bundled root (unique serial below).
+    expect(config.ssl.ca.some((cert: string) => cert.includes("bLxMod62P2ktCiAkxnKJwtE9VPYw"))).toBe(true);
   });
 
   it("skips TLS entirely for loopback hosts (local dev Postgres)", () => {
