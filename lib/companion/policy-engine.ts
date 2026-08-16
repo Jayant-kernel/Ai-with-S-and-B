@@ -86,8 +86,14 @@ export function decideResponsePolicy(input: {
   if (input.inputSafety.action === "block") {
     return { action: "replace", reason: "unsafe_input", reply: replies.unsafe_output };
   }
-  if (["block", "escalate"].includes(input.outputSafety.action)) {
-    return { action: "replace", reason: "unsafe_output", reply: replies.unsafe_output };
+  if (input.outputSafety.action !== "allow") {
+    // The candidate reaches TTS only when output safety explicitly says
+    // "allow". Checking only for block/escalate let a "clarify" verdict on
+    // the *output* fall through to the unvetted candidate below -- the one
+    // case this whole gate exists to prevent.
+    return input.outputSafety.action === "clarify"
+      ? { action: "replace", reason: "clarify", reply: replies.uncertain }
+      : { action: "replace", reason: "unsafe_output", reply: replies.unsafe_output };
   }
   if (
     input.inputSafety.action === "clarify"

@@ -43,6 +43,19 @@ def test_output_observer_can_replace_a_candidate():
     assert "extra tablet" not in reply
 
 
+def test_output_clarify_replaces_the_candidate_not_just_block_or_escalate():
+    # Regression: only output_model.action in {"block","escalate"} used to
+    # be checked, so a "clarify" verdict on the *output* fell all the way
+    # through to `return candidate, "approved"`.
+    uncertain_output = SafetyAssessment("unsafe_advice", "concern", "clarify", 0.6, "model")
+    reply, reason = choose_reply(
+        "This unvetted draft must never be spoken.", NORMAL, NORMAL, uncertain_output
+    )
+
+    assert reason == "clarify"
+    assert "unvetted draft" not in reply
+
+
 def test_blocked_input_category_is_not_ignored():
     # A category other than credential_request/scam (e.g. privacy) with
     # action="block" must not fall through to the unvetted candidate reply.

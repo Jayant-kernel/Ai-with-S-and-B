@@ -45,7 +45,11 @@ export const serverEnvSchema = z.object({
   SARVAM_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(120_000).default(45_000),
   SARVAM_MAX_AUDIO_BYTES: z.coerce.number().int().min(64_000).max(20_000_000).default(8_000_000),
   SARVAM_HISTORY_MESSAGES: z.coerce.number().int().min(0).max(20).default(16),
-  DATABASE_URL: z.string().default("file:./dev.db"),
+  // No default: there is no database client in this project yet (memory is
+  // still `lib/memory/*` in-process logic, gated off by ENABLE_MEMORY).
+  // A default placeholder here would make health.ts's databaseConfigured
+  // report true even though nothing is actually connected.
+  DATABASE_URL: optionalSecret,
   APP_ORIGIN: z.url().default("http://localhost:3000"),
   STORE_RAW_TRANSCRIPTS: envBoolean(false),
   ENABLE_MEMORY: envBoolean(false),

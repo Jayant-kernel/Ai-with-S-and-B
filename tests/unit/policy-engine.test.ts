@@ -134,4 +134,42 @@ describe("deterministic response policy", () => {
     expect(result.reason).toBe("scam");
     expect(result.reply).toContain("धोखाधड़ी");
   });
+
+  it("replaces the candidate when output safety says clarify, not just block/escalate", () => {
+    // Regression: only outputSafety.action in ["block","escalate"] used to
+    // be checked, so a "clarify" verdict on the *output* fell all the way
+    // through to the unvetted candidate reply.
+    const uncertainOutput: ModelSafetyAssessment = {
+      category: "unsafe_advice",
+      severity: "concern",
+      action: "clarify",
+      confidence: 0.6,
+      source: "model",
+    };
+    const result = decideResponsePolicy({
+      deterministic: { level: "none", concern: "none", cues: [] },
+      inputSafety: normal,
+      outputSafety: uncertainOutput,
+      candidateReply: "This unvetted draft must never be spoken.",
+    });
+
+    expect(result.action).toBe("replace");
+    expect(result.reason).toBe("clarify");
+    expect(result.reply).not.toContain("unvetted draft");
+  });
+
+  it("still allows the candidate when output safety explicitly allows it", () => {
+    const result = decideResponsePolicy({
+      deterministic: { level: "none", concern: "none", cues: [] },
+      inputSafety: normal,
+      outputSafety: normal,
+      candidateReply: "Tell me more about your day.",
+    });
+
+    expect(result).toEqual({
+      action: "allow",
+      reason: "approved",
+      reply: "Tell me more about your day.",
+    });
+  });
 });

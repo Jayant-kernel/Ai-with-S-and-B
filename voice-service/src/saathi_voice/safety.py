@@ -204,7 +204,13 @@ def choose_reply(
         # Any other blocked input category (privacy, abuse, unsafe_advice, ...)
         # must not fall through to the unvetted candidate reply.
         return replies["unsafe_output"], "unsafe_input"
-    if output_model.action in {"block", "escalate"}:
+    if output_model.action != "allow":
+        # The candidate reaches TTS only when output safety explicitly says
+        # "allow". Checking only for block/escalate let a "clarify" verdict
+        # on the *output* fall through to the unvetted candidate below --
+        # the one case this whole gate exists to prevent.
+        if output_model.action == "clarify":
+            return replies["clarify"], "clarify"
         return replies["unsafe_output"], "unsafe_output"
     if input_model.action == "clarify":
         return replies["clarify"], "clarify"

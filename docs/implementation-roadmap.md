@@ -27,9 +27,22 @@
 
 ## Verification performed with provider credits
 
-- One end-to-end browser turn must pass through Sarvam TTS, Saaras STT, Groq
-  conversation, both safety checks, Bulbul TTS, and encrypted context return.
-- Record latency for STT, conversation, safety, TTS, and the complete turn.
+One end-to-end browser turn has passed through Sarvam STT, Groq
+conversation, both safety checks, Sarvam TTS, and encrypted context return:
+HTTP 200, `safety_action=approved`, `safety_category=none`, valid Bulbul
+audio returned, encrypted conversation context returned. Measured component
+latency from that run:
+
+| Stage | Time |
+| --- | --- |
+| STT (Saaras) | 661 ms |
+| Conversation (Groq) | 305 ms |
+| Safety (Groq) | 182 ms |
+| TTS (Bulbul) | 3,153 ms |
+| **Total** | **4,302 ms** |
+
+TODO: the Hindi/Hinglish test sentence spoken for this run was not
+recorded and is not reconstructed here -- capture it on the next live run.
 
 ## Requires external configuration
 
@@ -51,6 +64,17 @@ Required before activation: elder timezone, verified caregiver contacts,
 permission scopes, scheduler deployment, retry limits, and an escalation
 operating procedure. The model never sends messages or changes reminders
 without deterministic validation and confirmation.
+
+### Public deployment hardening
+
+`app/api/sarvam/turn/route.ts` currently combines a same-origin check
+(browser protection, not authentication) with `LocalRateLimiter`, an
+in-memory, process-local limiter (`lib/realtime/request-policy.ts`). It
+resets on every restart, is not shared across multiple server instances,
+and trusts a client-supplied/forwarded-IP identifier. This is adequate for
+local, single-instance elder testing. Before a public, multi-instance, paid
+deployment: move rate limiting to a shared store (e.g. Upstash Redis) and
+add real request authentication in front of this endpoint.
 
 ## Deterministic pattern observations for elder testing
 
