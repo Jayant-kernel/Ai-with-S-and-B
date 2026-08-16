@@ -7,6 +7,7 @@ describe("server environment", () => {
     const env = parseServerEnv({});
 
     expect(env.OPENAI_API_KEY).toBeUndefined();
+    expect(env.GROQ_API_KEY).toBeUndefined();
     expect(env.GEMINI_API_KEY).toBeUndefined();
     expect(env.STORE_RAW_TRANSCRIPTS).toBe(false);
     expect(env.ENABLE_VOICE_CLONE).toBe(false);
@@ -15,6 +16,9 @@ describe("server environment", () => {
     expect(env.SARVAM_STT_MODEL).toBe("saaras:v3");
     expect(env.SARVAM_CHAT_MODEL).toBe("sarvam-105b-conversations");
     expect(env.SARVAM_TTS_MODEL).toBe("bulbul:v3");
+    expect(env.CONVERSATION_PROVIDER).toBe("auto");
+    expect(env.SAFETY_PROVIDER).toBe("auto");
+    expect(env.ENABLE_SAFETY_MONITOR).toBe(true);
   });
 
   it("parses feature flags explicitly", () => {

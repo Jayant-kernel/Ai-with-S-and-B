@@ -60,8 +60,11 @@ if (!turnResponse.ok) {
   console.log(`language=${turn.languageCode}`);
   console.log(`stt_ms=${turn.timings.sttMs}`);
   console.log(`chat_ms=${turn.timings.chatMs}`);
+  console.log(`safety_ms=${turn.timings.safetyMs}`);
   console.log(`tts_ms=${turn.timings.ttsMs}`);
   console.log(`total_ms=${turn.timings.totalMs}`);
+  console.log(`safety_action=${turn.dialogue.safetyAction}`);
+  console.log(`safety_category=${turn.dialogue.modelSafetyCategory}`);
   console.log(`reply_audio_base64_chars=${turn.audioBase64.length}`);
   console.log(`signed_context_present=${Boolean(turn.conversationState)}`);
 }

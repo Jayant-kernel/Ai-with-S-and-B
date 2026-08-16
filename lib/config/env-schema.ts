@@ -15,6 +15,7 @@ const envBoolean = (defaultValue: boolean) =>
 
 export const serverEnvSchema = z.object({
   OPENAI_API_KEY: optionalSecret,
+  GROQ_API_KEY: optionalSecret,
   SARVAM_API_KEY: optionalSecret,
   GEMINI_API_KEY: optionalSecret,
   CONVERSATION_STATE_SECRET: optionalSecret,
@@ -24,6 +25,16 @@ export const serverEnvSchema = z.object({
   OPENAI_REALTIME_VOICE: z.string().default("marin"),
   OPENAI_REASONING_EFFORT: z.enum(["low", "medium", "high"]).default("low"),
   OPENAI_TURN_DETECTION: z.literal("semantic_vad").default("semantic_vad"),
+  CONVERSATION_PROVIDER: z.enum(["auto", "sarvam", "groq", "openai"]).default("auto"),
+  SAFETY_PROVIDER: z.enum(["auto", "deterministic", "groq", "openai"]).default("auto"),
+  GROQ_BASE_URL: z.url().default("https://api.groq.com/openai/v1"),
+  GROQ_CONVERSATION_MODEL: z.string().default("llama-3.3-70b-versatile"),
+  GROQ_SAFETY_MODEL: z.string().default("openai/gpt-oss-safeguard-20b"),
+  OPENAI_BASE_URL: z.url().default("https://api.openai.com/v1"),
+  OPENAI_CONVERSATION_MODEL: z.string().default("gpt-5-mini"),
+  OPENAI_SAFETY_MODEL: z.string().default("gpt-5-mini"),
+  MODEL_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(30_000),
+  SAFETY_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(500).max(30_000).default(4_000),
   SARVAM_STT_MODEL: z.string().default("saaras:v3"),
   SARVAM_STT_LANGUAGE: z.string().default("unknown"),
   SARVAM_CHAT_MODEL: z.string().default("sarvam-105b-conversations"),
@@ -34,11 +45,15 @@ export const serverEnvSchema = z.object({
   SARVAM_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(120_000).default(45_000),
   SARVAM_MAX_AUDIO_BYTES: z.coerce.number().int().min(64_000).max(20_000_000).default(8_000_000),
   SARVAM_HISTORY_MESSAGES: z.coerce.number().int().min(0).max(20).default(16),
-  DATABASE_URL: z.string().default("file:./dev.db"),
+  // No default: there is no database client in this project yet (memory is
+  // still `lib/memory/*` in-process logic, gated off by ENABLE_MEMORY).
+  // A default placeholder here would make health.ts's databaseConfigured
+  // report true even though nothing is actually connected.
+  DATABASE_URL: optionalSecret,
   APP_ORIGIN: z.url().default("http://localhost:3000"),
   STORE_RAW_TRANSCRIPTS: envBoolean(false),
   ENABLE_MEMORY: envBoolean(false),
-  ENABLE_SAFETY_MONITOR: envBoolean(false),
+  ENABLE_SAFETY_MONITOR: envBoolean(true),
   ENABLE_REMINDERS: envBoolean(false),
   ENABLE_SARVAM_FALLBACK: envBoolean(false),
   ENABLE_VOICE_CLONE: z.literal("false").default("false").transform(() => false),

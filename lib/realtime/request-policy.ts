@@ -5,6 +5,16 @@ type RateEntry = {
   resetAt: number;
 };
 
+/**
+ * Process-local, in-memory rate limiter. State lives in this Map, so it
+ * resets on every restart, is not shared across multiple server instances,
+ * and keys on a client-supplied/forwarded-IP identifier that is not
+ * authentication. Combined with isSameOrigin() below (browser protection,
+ * not an auth boundary), this is adequate for local/single-instance elder
+ * testing but not for a publicly deployed, multi-instance, paid API
+ * endpoint -- that needs a shared store (e.g. Upstash Redis) before going
+ * public. See docs/implementation-roadmap.md.
+ */
 export class LocalRateLimiter {
   private readonly entries = new Map<string, RateEntry>();
 
