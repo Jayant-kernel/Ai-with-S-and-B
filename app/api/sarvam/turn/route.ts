@@ -1,6 +1,7 @@
 import { after, NextResponse } from "next/server";
 import { z } from "zod";
 
+import { decodeProsody, PROSODY_FIELD } from "@/lib/companion/prosody";
 import { getServerEnv } from "@/lib/config/server-env";
 import { getPool } from "@/lib/db/pool";
 import type { StoredMemory } from "@/lib/memory/context";
@@ -137,6 +138,11 @@ export async function POST(request: Request) {
     }
   }
 
+  // Best-effort and lossy by design (see decodeProsody's doc comment): a
+  // missing or malformed value degrades to the text-only dialogue policy
+  // rather than rejecting the turn.
+  const prosody = decodeProsody(form.get(PROSODY_FIELD));
+
   const rawSpeaker = form.get("speaker");
   const parsedSpeaker = rawSpeaker
     ? speakerSchema.safeParse(rawSpeaker)
@@ -190,6 +196,7 @@ export async function POST(request: Request) {
       speaker: parsedSpeaker.data,
       env,
       storedMemories,
+      prosody: prosody ?? undefined,
     });
     const { nextContext, ...response } = result;
     let nextState;

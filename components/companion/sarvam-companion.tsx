@@ -12,11 +12,14 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  adaptiveSpeechThreshold,
   ELDER_ENDPOINTING,
+  endpointSilenceMs,
   rootMeanSquare,
   shouldAutoSubmit,
   visibleInputLevel,
 } from "@/lib/audio/input-level";
+import { encodeProsody, MIN_PAUSE_MS, PROSODY_FIELD, summarizeProsody } from "@/lib/companion/prosody";
 import {
   SARVAM_VOICES,
   type SarvamVoice,
@@ -94,7 +97,7 @@ export function SarvamCompanion({
   const [hasCompletedTurn, setHasCompletedTurn] = useState(false);
   const [userTranscript, setUserTranscript] = useState("");
   const [assistantTranscript, setAssistantTranscript] = useState("");
-  const [speaker, setSpeaker] = useState<SarvamVoice>("ritu");
+  const [speaker, setSpeaker] = useState<SarvamVoice>("shubh");
   const [volume, setVolume] = useState(0.85);
   const [timings, setTimings] = useState<Timings | null>(null);
   const [conversationState, setConversationState] = useState(() => {
@@ -121,6 +124,16 @@ export function SarvamCompanion({
   const meterIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const speechDetectedRef = useRef(false);
   const lastSpeechAtRef = useRef(0);
+  // Level trace for the turn in progress, and the longest completed pause
+  // observed so far (excludes the pause still in progress -- see
+  // endpointSilenceMs). Both reset per recording alongside speechDetectedRef.
+  const levelHistoryRef = useRef<number[]>([]);
+  const longestPriorPauseMsRef = useRef(0);
+  // Finalized once, at recorder.onstop, from the full level trace -- see
+  // summarizeProsody's doc comment on why leading/trailing silence is trimmed
+  // (trailing silence there is the endpointing wait, not a conversational
+  // pause). null whenever the meter never ran.
+  const pendingProsodyRef = useRef<ReturnType<typeof summarizeProsody> | null>(null);
   const submitRecordingRef = useRef(false);
   const stopRequestedRef = useRef(false);
   const meterAvailableRef = useRef(true);
@@ -244,6 +257,9 @@ export function SarvamCompanion({
     form.set("audio", audioBlob, `voice-turn.${extensionFor(mimeType)}`);
     if (conversationState) form.set("conversationState", conversationState);
     if (debug) form.set("speaker", speaker);
+    if (pendingProsodyRef.current) {
+      form.set(PROSODY_FIELD, encodeProsody(pendingProsodyRef.current));
+    }
 
     try {
       const apiResponse = await fetch("/api/sarvam/turn", {
@@ -322,14 +338,33 @@ export function SarvamCompanion({
         const now = performance.now();
         const rms = rootMeanSquare(samples);
         setInputLevel(visibleInputLevel(rms));
+        levelHistoryRef.current.push(rms);
 
-        if (rms >= ELDER_ENDPOINTING.speechRmsThreshold) {
+        // Adapts to this speaker and this room instead of one fixed cutoff --
+        // see adaptiveSpeechThreshold's doc comment (Atmaja & Akagi, silence
+        // relative to the utterance's own mean level).
+        const threshold = adaptiveSpeechThreshold(levelHistoryRef.current);
+        if (rms >= threshold) {
+          // A gap that just ended counts as a completed pause once it clears
+          // the noise floor of ordinary word-to-word spacing.
+          if (speechDetectedRef.current) {
+            const gap = now - lastSpeechAtRef.current;
+            if (gap >= MIN_PAUSE_MS) {
+              longestPriorPauseMsRef.current = Math.max(longestPriorPauseMsRef.current, gap);
+            }
+          }
           speechDetectedRef.current = true;
           lastSpeechAtRef.current = now;
         } else if (shouldAutoSubmit({
           speechDetected: speechDetectedRef.current,
           lastSpeechAt: lastSpeechAtRef.current,
           now,
+          // Someone who has already paused mid-thought gets the full patient
+          // wait; a fluent speaker is very likely done once the silence
+          // already exceeds anything they've taken so far in this turn. See
+          // endpointSilenceMs (Inoue et al., a fixed timeout is the wrong
+          // instrument).
+          silenceMs: endpointSilenceMs({ longestPauseMs: longestPriorPauseMsRef.current }),
         })) {
           stopRequestedRef.current = true;
           submitRecordingRef.current = true;
@@ -375,6 +410,8 @@ export function SarvamCompanion({
     setInputLevel(0);
     speechDetectedRef.current = false;
     lastSpeechAtRef.current = 0;
+    levelHistoryRef.current = [];
+    longestPriorPauseMsRef.current = 0;
     submitRecordingRef.current = false;
     stopRequestedRef.current = false;
     meterAvailableRef.current = true;
@@ -432,6 +469,9 @@ export function SarvamCompanion({
         const actualType = recorder.mimeType || mimeType || "audio/webm";
         const blob = new Blob(chunks, { type: actualType });
         const shouldSubmit = submitRecordingRef.current;
+        pendingProsodyRef.current = levelHistoryRef.current.length > 0
+          ? summarizeProsody(levelHistoryRef.current, { hopMs: ELDER_ENDPOINTING.meterPollMs })
+          : null;
         stopCapture();
         if (shouldSubmit) {
           quietTurnCountRef.current = 0;
@@ -541,7 +581,7 @@ export function SarvamCompanion({
             onChange={(event) => setSpeaker(event.target.value as SarvamVoice)}
             className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base sm:max-w-sm"
           >
-            {SARVAM_VOICES.map((voice) => <option key={voice} value={voice}>{voice === "ritu" ? `${voice} (default)` : voice}</option>)}
+            {SARVAM_VOICES.map((voice) => <option key={voice} value={voice}>{voice === "shubh" ? `${voice} (default)` : voice}</option>)}
           </select>
           <a className="mt-4 block font-semibold text-teal-800 underline" href="/debug/openai">
             Open the OpenAI Realtime comparison

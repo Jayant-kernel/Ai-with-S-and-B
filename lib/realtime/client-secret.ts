@@ -2,7 +2,14 @@ import "server-only";
 
 import { z } from "zod";
 
+import { timeContextInstruction } from "@/lib/companion/time-of-day";
+
 import { COMPANION_INSTRUCTIONS, REALTIME_TRUNCATION, type RealtimeModel } from "./settings";
+
+// Slightly under 1.0 so the companion speaks a little more slowly than the
+// model's default -- easier to follow for an older listener, without sounding
+// artificially dragged out.
+const COMPANION_SPEECH_SPEED = 0.95;
 
 const clientSecretResponseSchema = z.object({
   value: z.string().min(1),
@@ -44,7 +51,11 @@ export async function createRealtimeClientSecret({
         session: {
           type: "realtime",
           model,
-          instructions: COMPANION_INSTRUCTIONS,
+          // Time context is appended per session so the companion knows
+          // whether it is morning/afternoon/evening/night in India without
+          // being told, and which meal is natural to ask about if the
+          // conversation goes quiet.
+          instructions: `${COMPANION_INSTRUCTIONS}\n\n${timeContextInstruction()}`,
           output_modalities: ["audio"],
           audio: {
             input: {
@@ -57,7 +68,7 @@ export async function createRealtimeClientSecret({
                 interrupt_response: true,
               },
             },
-            output: { voice, speed: 1 },
+            output: { voice, speed: COMPANION_SPEECH_SPEED },
           },
           reasoning: { effort: reasoningEffort },
           truncation: REALTIME_TRUNCATION,
