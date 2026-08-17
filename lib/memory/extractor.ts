@@ -100,9 +100,14 @@ export async function extractMemoryCandidates(input: {
       maxTokens: 400,
       temperature: 0,
       responseFormat: "json_object",
-      ...(config.provider === "groq"
-        ? { reasoningEffort: "low" as const, includeReasoning: false }
-        : {}),
+      // Deliberately NO reasoningEffort/includeReasoning here, unlike
+      // lib/companion/safety-observer.ts. Those are valid there because
+      // GROQ_SAFETY_MODEL is a reasoning model (gpt-oss-safeguard-20b),
+      // but this extractor reuses GROQ_CONVERSATION_MODEL
+      // (llama-3.3-70b-versatile), which rejects `reasoning_effort` with
+      // HTTP 400 "not supported with this model". Because extraction fails
+      // soft, that 400 was silently indistinguishable from "found nothing
+      // worth remembering" -- memory simply never recorded anything.
       fetchImpl: input.fetchImpl,
     });
     const parsed = responseSchema.safeParse(JSON.parse(response.content));

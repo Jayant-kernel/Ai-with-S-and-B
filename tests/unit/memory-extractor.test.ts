@@ -11,6 +11,32 @@ function fetchWithContent(content: string): typeof fetch {
   }), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
+describe("memory candidate extraction request shape", () => {
+  it("does not send reasoning_effort, which the conversation model rejects with a 400", async () => {
+    // Regression, found live: this was copied from safety-observer.ts,
+    // where reasoningEffort is valid because GROQ_SAFETY_MODEL is a
+    // reasoning model. The extractor reuses GROQ_CONVERSATION_MODEL
+    // (llama-3.3-70b-versatile), which returns HTTP 400 "`reasoning_effort`
+    // is not supported with this model". Extraction fails soft, so that 400
+    // was indistinguishable from "nothing worth remembering" -- memory
+    // silently never recorded anything at all against a real Groq account.
+    let sentBody: Record<string, unknown> | undefined;
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      sentBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: '{"candidates":[]}' }, finish_reason: "stop" }],
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    };
+
+    await extractMemoryCandidates({ transcript: "hello", reply: "hi", env, fetchImpl });
+
+    expect(sentBody).toBeDefined();
+    expect(sentBody).not.toHaveProperty("reasoning_effort");
+    expect(sentBody).not.toHaveProperty("include_reasoning");
+    expect(sentBody).toMatchObject({ response_format: { type: "json_object" }, temperature: 0 });
+  });
+});
+
 describe("memory candidate extraction", () => {
   it("parses candidates that match the exact contract", async () => {
     const fetchImpl = fetchWithContent(JSON.stringify({

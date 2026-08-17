@@ -26,7 +26,9 @@ export const serverEnvSchema = z.object({
   VOICE_ENGINE: z.enum(["sarvam_chain", "openai_realtime"]).default("sarvam_chain"),
   OPENAI_REALTIME_MODEL: z.string().default("gpt-realtime-2.1-mini"),
   OPENAI_REALTIME_DEV_MODEL: z.string().default("gpt-realtime-2.1"),
-  OPENAI_REALTIME_VOICE: z.string().default("marin"),
+  // cedar is the male-sounding Realtime voice; marin reads female. Saathi is
+  // written as a calm man in his forties, so cedar is the default.
+  OPENAI_REALTIME_VOICE: z.string().default("cedar"),
   OPENAI_REASONING_EFFORT: z.enum(["low", "medium", "high"]).default("low"),
   OPENAI_TURN_DETECTION: z.literal("semantic_vad").default("semantic_vad"),
   CONVERSATION_PROVIDER: z.enum(["auto", "sarvam", "groq", "openai"]).default("auto"),
@@ -44,8 +46,12 @@ export const serverEnvSchema = z.object({
   SARVAM_CHAT_MODEL: z.string().default("sarvam-105b-conversations"),
   SARVAM_TTS_MODEL: z.string().default("bulbul:v3"),
   SARVAM_TTS_LANGUAGE: z.enum(SARVAM_TTS_LANGUAGES).default("hi-IN"),
-  SARVAM_TTS_SPEAKER: z.enum(SARVAM_VOICES).default("ritu"),
-  SARVAM_TTS_PACE: z.coerce.number().min(0.5).max(2).default(0.85),
+  // shubh is the male Bulbul speaker; ritu/priya/simran read female. Matches
+  // the male companion persona in COMPANION_INSTRUCTIONS.
+  SARVAM_TTS_SPEAKER: z.enum(SARVAM_VOICES).default("shubh"),
+  // 0.81 is ~95% of the previous 0.85 -- a small extra slowdown so an older
+  // listener has more time to follow each phrase.
+  SARVAM_TTS_PACE: z.coerce.number().min(0.5).max(2).default(0.81),
   SARVAM_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(120_000).default(45_000),
   SARVAM_MAX_AUDIO_BYTES: z.coerce.number().int().min(64_000).max(20_000_000).default(8_000_000),
   SARVAM_HISTORY_MESSAGES: z.coerce.number().int().min(0).max(20).default(16),

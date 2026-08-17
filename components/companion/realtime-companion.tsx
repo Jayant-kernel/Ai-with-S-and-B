@@ -95,7 +95,7 @@ export function RealtimeCompanion({
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(0.85);
   const [model, setModel] = useState<RealtimeModel>(REALTIME_MINI_MODEL);
-  const [voice, setVoice] = useState<RealtimeVoice>("marin");
+  const [voice, setVoice] = useState<RealtimeVoice>("cedar");
   const [userTranscript, setUserTranscript] = useState("");
   const [assistantTranscript, setAssistantTranscript] = useState("");
   const [usage, setUsage] = useState<RealtimeUsageTotals>(EMPTY_USAGE);
@@ -411,7 +411,7 @@ export function RealtimeCompanion({
           >
             {REALTIME_VOICES.map((option) => (
               <option key={option} value={option}>
-                {option === "marin" ? `${option} (default)` : option}
+                {option === "cedar" ? `${option} (default)` : option}
               </option>
             ))}
           </select>
